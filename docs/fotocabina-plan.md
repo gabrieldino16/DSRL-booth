@@ -77,15 +77,15 @@ y generar el enlace/QR de descarga. Alternativas a evaluar:
 > El modo lote actual queda como **una de las opciones** (pantalla de inicio con
 > selector de modo).
 
-1. **Pantalla de inicio / selector de modo**: "Preparar tanda (lote)" vs
-   "Fotocabina en vivo". El lote actual pasa a ser una opción.
-2. **Modo fotocabina — mínimo viable**: preview de webcam, botón de disparo,
-   componer con marco existente, mostrar resultado, botón Imprimir. (Reusa
-   `camera.py`, `processor.compose_image`, `imaging_qt.print_image`.)
-3. **Sesión multi-captura**: cuenta regresiva, N capturas seguidas, y armado de
-   la foto de salida con N huecos (tira de fotocabina).
-4. **Plantillas**: formato de plantilla (JSON) con huecos de foto + capas +
-   marco. Al principio plantillas prearmadas; después el editor visual.
+1. ✅ **Pantalla de inicio / selector de modo**: "Preparar tanda (lote)" vs
+   "Fotocabina en vivo". El lote actual quedó como una opción. (`home.py`)
+2. ✅ **Modo fotocabina — mínimo viable**: preview, disparo con cuenta regresiva,
+   componer con marco, mostrar resultado, botón Imprimir. (`booth.py`)
+3. ✅ **Sesión multi-captura**: N capturas seguidas (cuenta regresiva por toma) y
+   armado de la foto de salida con N huecos. (`booth.py`)
+4. ✅ **Plantillas (formato + prearmadas)**: `template.py` con huecos en
+   fracciones 0..1, marco/fondo opcionales, prearmadas + carga de JSON desde
+   `plantillas/`. Falta el **editor visual** (paso 7).
 5. **Cámara Canon (EDSDK)**: `CanonBackend` que implemente `CameraBackend`.
 6. **Entrega**: Imprimir (hecho), luego Email (SMTP) y QR (SmugMug u otro).
 7. **Editor visual de plantillas**: arrastrar huecos/imágenes/textos, capas,
