@@ -100,9 +100,13 @@ class Worker(QThread):
 
 
 class MainWindow(QMainWindow):
+    """Modo lote (Flujo A): componer una tanda de fotos con un marco."""
+
+    closed = Signal()  # avisa al inicio cuando esta ventana se cierra
+
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("DSRL Booth")
+        self.setWindowTitle("DSRL Booth — Preparar tanda")
         self.resize(880, 620)
 
         self.frame_path: str | None = None
@@ -111,11 +115,29 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
 
+    def closeEvent(self, event) -> None:  # noqa: N802
+        self.closed.emit()
+        super().closeEvent(event)
+
     # ---------- construccion de la interfaz ----------
     def _build_ui(self) -> None:
         root = QWidget()
         self.setCentralWidget(root)
-        layout = QHBoxLayout(root)
+        outer = QVBoxLayout(root)
+
+        # --- barra superior: volver al inicio ---
+        top = QHBoxLayout()
+        back_btn = QPushButton("← Inicio")
+        back_btn.clicked.connect(self.close)
+        top.addWidget(back_btn)
+        top.addWidget(QLabel("<b>Preparar tanda (lote)</b>"))
+        top.addStretch(1)
+        outer.addLayout(top)
+
+        columns = QWidget()
+        layout = QHBoxLayout(columns)
+        layout.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(columns, stretch=1)
 
         # --- columna izquierda: fotos ---
         left = QVBoxLayout()
