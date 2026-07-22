@@ -91,9 +91,20 @@ y generar el enlace/QR de descarga. Alternativas a evaluar:
    `CanonBackend` (EDSDK vía ctypes; **falta probar con hardware**). Setup en
    `docs/canon-setup.md`.
 6. ✅ **Entrega**: Imprimir + Email (SMTP) + QR (SmugMug o servidor local).
-7. **Editor visual de plantillas**: arrastrar huecos/imágenes/textos, capas,
-   guardar/cargar. (Lo más grande; va al final.)
+7. ✅ **Editor visual de plantillas** (`editor.py`): lienzo con huecos movibles y
+   redimensionables (o por valores exactos), tamaño/orientación/fondo/marco,
+   agregar/duplicar/eliminar/reordenar y guardar/cargar JSON. Falta (futuro):
+   capas de imagen sueltas, textos y QR dentro del diseño.
 
-## ❓ Decisiones pendientes
-- Backend de QR/descarga: SmugMug API vs auto-hospedado.
-- Modelo(s) de cámara Canon y si el EDSDK está disponible.
+## ✅ Estado: hoja de ruta base completa
+
+Los 7 pasos están implementados. Pendiente de validación/uso real:
+- **Probar la Canon por EDSDK** con la cámara (el backend no se testeó en hardware).
+- **Cargar credenciales** en `secrets.json` (SmugMug + email) para la entrega en la nube.
+- Probar el flujo completo en la PC del evento (impresora K60, WiFi para QR).
+
+## 💡 Ideas para más adelante
+- Editor: textos, QR y capas de imagen dentro del diseño (como dslrBooth).
+- Pantalla "kiosco" a pantalla completa para el evento (sin barras de ventana).
+- Backup automático al TrueNAS de cada evento.
+- Boomerang / GIF / video (como dslrBooth).
