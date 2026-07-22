@@ -55,6 +55,13 @@ class HomeWindow(QMainWindow):
         booth_btn.clicked.connect(self._open_booth)
         v.addWidget(booth_btn)
 
+        editor_btn = self._mode_button(
+            "🎨  Editor de plantillas",
+            "Diseñá dónde caen las fotos en la salida (tira de fotocabina).",
+            "#7d4dff")
+        editor_btn.clicked.connect(self._open_editor)
+        v.addWidget(editor_btn)
+
         v.addStretch(2)
 
     def _mode_button(self, title: str, desc: str, color: str) -> QPushButton:
@@ -76,6 +83,10 @@ class HomeWindow(QMainWindow):
     def _open_booth(self) -> None:
         from booth import BoothWindow
         self._open(BoothWindow())
+
+    def _open_editor(self) -> None:
+        from editor import TemplateEditor
+        self._open(TemplateEditor())
 
     def _open(self, window) -> None:
         self._child = window
