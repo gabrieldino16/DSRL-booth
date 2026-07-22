@@ -61,17 +61,20 @@ def _fit_photo(photo: Image.Image, target: tuple[int, int], job: Job) -> Image.I
     return ImageOps.fit(photo, (tw, th), Image.LANCZOS, centering=(0.5, 0.5))
 
 
-def compose(photo_path: str, job: Job, frame: Image.Image | None = None) -> Image.Image:
-    """Genera la imagen final (foto ajustada + marco encima). No la guarda."""
+def compose_image(photo: Image.Image, job: Job,
+                  frame: Image.Image | None = None) -> Image.Image:
+    """Compone una foto ya cargada en memoria con el marco. Devuelve RGB.
+
+    Sirve tanto para archivos (modo lote) como para capturas en vivo (fotocabina).
+    """
     if frame is None:
         frame = _load_frame(job.frame_path)
 
     target = _canvas_size(frame, job)
 
-    with Image.open(photo_path) as raw:
-        # Corrige rotacion segun metadatos EXIF de la camara.
-        raw = ImageOps.exif_transpose(raw)
-        base = _fit_photo(raw, target, job)
+    # Corrige rotacion segun metadatos EXIF de la camara (si los hay).
+    photo = ImageOps.exif_transpose(photo)
+    base = _fit_photo(photo, target, job)
 
     # Escala el marco exactamente al lienzo y lo pega respetando su transparencia.
     frame_scaled = frame if frame.size == target else frame.resize(target, Image.LANCZOS)
@@ -80,22 +83,32 @@ def compose(photo_path: str, job: Job, frame: Image.Image | None = None) -> Imag
     return base_rgba.convert("RGB")
 
 
+def compose(photo_path: str, job: Job, frame: Image.Image | None = None) -> Image.Image:
+    """Genera la imagen final desde un archivo (foto ajustada + marco). No la guarda."""
+    with Image.open(photo_path) as raw:
+        return compose_image(raw, job, frame)
+
+
 def output_path(photo_path: str, out_dir: str, job: Job) -> str:
     stem = os.path.splitext(os.path.basename(photo_path))[0]
     ext = "jpg" if job.out_format == config.FORMAT_JPG else "png"
     return os.path.join(out_dir, f"{stem}{config.OUTPUT_SUFFIX}.{ext}")
 
 
+def save_result(image: Image.Image, dest: str, job: Job) -> str:
+    """Guarda una imagen ya compuesta en disco segun el formato del job."""
+    os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+    if job.out_format == config.FORMAT_JPG:
+        image.save(dest, "JPEG", quality=job.quality,
+                   dpi=(job.dpi, job.dpi), subsampling=0, optimize=True)
+    else:
+        image.save(dest, "PNG", dpi=(job.dpi, job.dpi))
+    return dest
+
+
 def process_one(photo_path: str, out_dir: str, job: Job,
                 frame: Image.Image | None = None) -> str:
     """Procesa una foto y la guarda. Devuelve la ruta del archivo generado."""
-    os.makedirs(out_dir, exist_ok=True)
     result = compose(photo_path, job, frame=frame)
     dest = output_path(photo_path, out_dir, job)
-
-    if job.out_format == config.FORMAT_JPG:
-        result.save(dest, "JPEG", quality=job.quality,
-                    dpi=(job.dpi, job.dpi), subsampling=0, optimize=True)
-    else:
-        result.save(dest, "PNG", dpi=(job.dpi, job.dpi))
-    return dest
+    return save_result(result, dest, job)
