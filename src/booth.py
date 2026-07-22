@@ -16,18 +16,35 @@ import os
 from datetime import datetime
 
 from PIL import Image
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QPushButton, QStackedWidget, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 import config
+import delivery
 import template as templates_mod
 from camera import open_default_camera
 from imaging_qt import pil_to_qpixmap, print_image
 from processor import Job, compose_template, output_path, save_result, _load_frame
+
+
+class _DeliveryWorker(QThread):
+    """Corre una tarea de entrega (subir/enviar) sin congelar la ventana."""
+    done = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, fn) -> None:
+        super().__init__()
+        self._fn = fn
+
+    def run(self) -> None:
+        try:
+            self.done.emit(self._fn())
+        except Exception as exc:  # noqa: BLE001
+            self.failed.emit(str(exc))
 
 
 class BoothWindow(QMainWindow):
@@ -49,6 +66,11 @@ class BoothWindow(QMainWindow):
         self.template = self.templates[0]
         self._frame_img: Image.Image | None = None
         self._last_result: Image.Image | None = None
+        self._last_dest: str | None = None   # archivo guardado de la última foto
+        self._last_url: str | None = None     # URL publicada (si se generó el QR)
+        self._delivery_worker: _DeliveryWorker | None = None
+
+        self.uploader = delivery.load_uploader(self.out_dir)
 
         # Estado de la sesión de capturas.
         self._session_photos: list[Image.Image] = []
@@ -135,25 +157,31 @@ class BoothWindow(QMainWindow):
         self.result_status.setAlignment(Qt.AlignCenter)
         v.addWidget(self.result_status)
 
-        row = QHBoxLayout()
+        # Fila 1: entrega de la foto.
+        row1 = QHBoxLayout()
         print_btn = QPushButton("🖨  Imprimir")
-        print_btn.setMinimumHeight(52)
-        print_btn.setStyleSheet("font-size:16px; font-weight:bold;")
         print_btn.clicked.connect(self._print_result)
+        self.qr_btn = QPushButton("🔳  QR para descargar")
+        self.qr_btn.clicked.connect(self._share_qr)
+        self.email_btn = QPushButton("✉  Email")
+        self.email_btn.clicked.connect(self._share_email)
+        for b in (print_btn, self.qr_btn, self.email_btn):
+            b.setMinimumHeight(52)
+            b.setStyleSheet("font-size:16px; font-weight:bold;")
+            row1.addWidget(b)
+        v.addLayout(row1)
 
+        # Fila 2: navegación.
+        row2 = QHBoxLayout()
         again_btn = QPushButton("📷  Nueva sesión")
-        again_btn.setMinimumHeight(52)
-        again_btn.setStyleSheet("font-size:16px; font-weight:bold;")
+        again_btn.setMinimumHeight(46)
         again_btn.clicked.connect(self._new_photo)
-
         home_btn = QPushButton("← Inicio")
-        home_btn.setMinimumHeight(52)
+        home_btn.setMinimumHeight(46)
         home_btn.clicked.connect(self.close)
-
-        row.addWidget(print_btn, stretch=2)
-        row.addWidget(again_btn, stretch=2)
-        row.addWidget(home_btn, stretch=1)
-        v.addLayout(row)
+        row2.addWidget(again_btn, stretch=2)
+        row2.addWidget(home_btn, stretch=1)
+        v.addLayout(row2)
         return page
 
     # ---------- plantilla ----------
@@ -263,6 +291,8 @@ class BoothWindow(QMainWindow):
 
     # ---------- resultado ----------
     def _show_result(self, result: Image.Image, dest: str) -> None:
+        self._last_dest = dest
+        self._last_url = None
         pix = pil_to_qpixmap(result).scaled(
             self.result_view.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.result_view.setPixmap(pix)
@@ -273,6 +303,81 @@ class BoothWindow(QMainWindow):
         if self._last_result is not None:
             print_image(self._last_result, parent=self)
 
+    # ---------- entrega: QR y email ----------
+    def _share_qr(self) -> None:
+        if not self._last_dest:
+            return
+        if self._last_url:  # ya se subió antes: mostrar el QR directo
+            self._show_qr_dialog(self._last_url)
+            return
+        self.qr_btn.setEnabled(False)
+        self.result_status.setText(f"Subiendo a {self.uploader.name}...")
+        self._run_delivery(lambda: self.uploader.upload(self._last_dest),
+                           self._on_qr_ready, self._on_delivery_error)
+
+    def _on_qr_ready(self, url: str) -> None:
+        self.qr_btn.setEnabled(True)
+        self._last_url = url
+        self.result_status.setText(f"Guardada en: {self._last_dest}")
+        self._show_qr_dialog(url)
+
+    def _show_qr_dialog(self, url: str) -> None:
+        qr_img = delivery.make_qr(url)
+        dlg = QDialog(self)
+        dlg.setWindowTitle("QR para descargar")
+        lay = QVBoxLayout(dlg)
+        title = QLabel("Escaneá para descargar tu foto")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("font-size:16px; font-weight:bold;")
+        lay.addWidget(title)
+        qr_label = QLabel()
+        qr_label.setAlignment(Qt.AlignCenter)
+        qr_label.setPixmap(pil_to_qpixmap(qr_img).scaled(
+            360, 360, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        lay.addWidget(qr_label)
+        link = QLabel(f'<a href="{url}">{url}</a>')
+        link.setAlignment(Qt.AlignCenter)
+        link.setOpenExternalLinks(True)
+        link.setWordWrap(True)
+        lay.addWidget(link)
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(dlg.accept)
+        lay.addWidget(close_btn)
+        dlg.exec()
+
+    def _share_email(self) -> None:
+        if not self._last_dest:
+            return
+        addr, ok = QInputDialog.getText(
+            self, "Enviar por email", "Email del cliente:", QLineEdit.Normal)
+        addr = addr.strip()
+        if not ok or not addr:
+            return
+        self.email_btn.setEnabled(False)
+        self.result_status.setText(f"Enviando a {addr}...")
+        dest, link = self._last_dest, self._last_url
+        self._run_delivery(
+            lambda: delivery.send_email(addr, dest, link=link),
+            lambda _: self._on_email_sent(addr), self._on_delivery_error)
+
+    def _on_email_sent(self, addr: str) -> None:
+        self.email_btn.setEnabled(True)
+        self.result_status.setText(f"✓ Enviado a {addr}")
+
+    def _on_delivery_error(self, msg: str) -> None:
+        self.qr_btn.setEnabled(True)
+        self.email_btn.setEnabled(True)
+        self.result_status.setText(f"Guardada en: {self._last_dest}")
+        QMessageBox.warning(self, "No se pudo completar", msg)
+
+    def _run_delivery(self, fn, on_done, on_error) -> None:
+        worker = _DeliveryWorker(fn)
+        worker.done.connect(on_done)
+        worker.failed.connect(on_error)
+        worker.finished.connect(lambda: setattr(self, "_delivery_worker", None))
+        self._delivery_worker = worker  # referencia viva mientras corre
+        worker.start()
+
     def _new_photo(self) -> None:
         self.session_label.setText("")
         self.stack.setCurrentIndex(0)
@@ -282,9 +387,10 @@ class BoothWindow(QMainWindow):
     def closeEvent(self, event) -> None:  # noqa: N802
         self.preview_timer.stop()
         self.countdown_timer.stop()
-        try:
-            self.camera.stop()
-        except Exception:  # noqa: BLE001
-            pass
+        for closer in (self.camera.stop, self.uploader.stop):
+            try:
+                closer()
+            except Exception:  # noqa: BLE001
+                pass
         self.closed.emit()
         super().closeEvent(event)
