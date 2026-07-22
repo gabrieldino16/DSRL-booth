@@ -1,0 +1,9 @@
+Guarda aca tus marcos en PNG (con transparencia).
+
+Consejos:
+- Disena el marco a la misma proporcion que el papel:
+    10x15 cm  ->  proporcion 2:3 (ej. 1181 x 1772 px a 300 DPI)
+    15x20 cm  ->  proporcion 3:4 (ej. 1772 x 2362 px a 300 DPI)
+- Si el marco es apaisado (mas ancho que alto), la foto final sale apaisada.
+  Si es vertical, sale vertical. La orientacion la manda el marco.
+- Las zonas transparentes del PNG dejan ver la foto; las opacas la tapan.
