@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 import config
 import delivery
 import template as templates_mod
-from camera import open_default_camera
+from camera import available_cameras, DummyBackend
 from imaging_qt import pil_to_qpixmap, print_image
 from processor import Job, compose_template, output_path, save_result, _load_frame
 
@@ -78,7 +78,9 @@ class BoothWindow(QMainWindow):
         self._countdown = 0
         self._in_session = False
 
-        self.camera = open_default_camera()
+        # Cámaras disponibles (Canon si está el SDK, webcams, simulada).
+        self.cam_options = available_cameras()
+        self._cam_index, self.camera = self._open_default_camera()
 
         self._build_ui()
         self._on_template_changed(0)
@@ -119,7 +121,13 @@ class BoothWindow(QMainWindow):
         top.addWidget(self.info_label)
 
         top.addStretch(1)
-        top.addWidget(QLabel(f"📷 {self.camera.name}"))
+        top.addWidget(QLabel("📷"))
+        self.camera_combo = QComboBox()
+        for opt in self.cam_options:
+            self.camera_combo.addItem(opt.label)
+        self.camera_combo.setCurrentIndex(self._cam_index)
+        self.camera_combo.currentIndexChanged.connect(self._select_camera)
+        top.addWidget(self.camera_combo)
         v.addLayout(top)
 
         # Estado de la sesión (Toma X de N / mensajes).
@@ -192,6 +200,48 @@ class BoothWindow(QMainWindow):
         tomas = "1 foto" if n == 1 else f"{n} fotos"
         self.info_label.setText(f"{self.template.size_label} · {tomas}")
 
+    # ---------- cámara ----------
+    def _open_default_camera(self):
+        """Abre la primera cámara que arranque, sin auto-iniciar la Canon."""
+        for i, opt in enumerate(self.cam_options):
+            if opt.label.startswith("Canon"):
+                continue  # la Canon (EDSDK) se elige a mano
+            try:
+                cam = opt.factory()
+                cam.start()
+                return i, cam
+            except Exception:  # noqa: BLE001
+                continue
+        cam = DummyBackend()
+        cam.start()
+        return len(self.cam_options) - 1, cam
+
+    def _select_camera(self, index: int) -> None:
+        if self._in_session or index == self._cam_index:
+            return
+        self.preview_timer.stop()
+        try:
+            self.camera.stop()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            cam = self.cam_options[index].factory()
+            cam.start()
+            self.camera = cam
+            self._cam_index = index
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "No se pudo abrir la cámara", str(exc))
+            self.camera_combo.blockSignals(True)
+            self.camera_combo.setCurrentIndex(self._cam_index)
+            self.camera_combo.blockSignals(False)
+            try:
+                self.camera = self.cam_options[self._cam_index].factory()
+                self.camera.start()
+            except Exception:  # noqa: BLE001
+                self.camera = DummyBackend()
+                self.camera.start()
+        self.preview_timer.start(self.PREVIEW_MS)
+
     # ---------- preview en vivo ----------
     def _update_preview(self) -> None:
         img = self.camera.read_preview()
@@ -220,6 +270,7 @@ class BoothWindow(QMainWindow):
         self._in_session = True
         self.shutter_btn.setEnabled(False)
         self.template_combo.setEnabled(False)
+        self.camera_combo.setEnabled(False)
         self._next_shot()
 
     def _next_shot(self) -> None:
@@ -281,6 +332,7 @@ class BoothWindow(QMainWindow):
         self._in_session = False
         self.shutter_btn.setEnabled(True)
         self.template_combo.setEnabled(True)
+        self.camera_combo.setEnabled(True)
 
     def _save(self, result: Image.Image) -> str:
         os.makedirs(self.out_dir, exist_ok=True)

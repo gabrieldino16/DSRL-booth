@@ -171,3 +171,52 @@ def open_default_camera() -> CameraBackend:
         dummy = DummyBackend()
         dummy.start()
         return dummy
+
+
+from dataclasses import dataclass
+from typing import Callable
+
+
+@dataclass
+class CameraOption:
+    """Una cámara ofrecida en el selector. `factory` la crea (aún sin abrir)."""
+    label: str
+    factory: Callable[[], CameraBackend]
+
+
+def list_webcam_indices(max_index: int = 5) -> list[int]:
+    """Índices de webcams disponibles. Sin OpenCV, ofrece al menos el #0."""
+    try:
+        import cv2
+    except ImportError:
+        return [0]
+    found: list[int] = []
+    for i in range(max_index):
+        cap = cv2.VideoCapture(i, cv2.CAP_DSHOW)
+        if cap is not None and cap.isOpened():
+            found.append(i)
+        if cap is not None:
+            cap.release()
+    return found or [0]
+
+
+def available_cameras() -> list[CameraOption]:
+    """Cámaras para el selector: Canon (si está el SDK), webcams y la simulada."""
+    options: list[CameraOption] = []
+
+    try:
+        import canon
+        if canon.edsdk_available():
+            options.append(CameraOption("Canon (EDSDK) — máxima calidad",
+                                        lambda: canon.CanonBackend()))
+    except Exception:  # noqa: BLE001
+        pass
+
+    for i in list_webcam_indices():
+        options.append(CameraOption(
+            f"Cámara USB #{i} (webcam / EOS Webcam Utility)",
+            lambda i=i: WebcamBackend(i)))
+
+    options.append(CameraOption("Cámara simulada (sin hardware)",
+                                lambda: DummyBackend()))
+    return options

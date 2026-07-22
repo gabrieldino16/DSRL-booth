@@ -86,8 +86,11 @@ y generar el enlace/QR de descarga. Alternativas a evaluar:
 4. ✅ **Plantillas (formato + prearmadas)**: `template.py` con huecos en
    fracciones 0..1, marco/fondo opcionales, prearmadas + carga de JSON desde
    `plantillas/`. Falta el **editor visual** (paso 7).
-5. **Cámara Canon (EDSDK)**: `CanonBackend` que implemente `CameraBackend`.
-6. **Entrega**: Imprimir (hecho), luego Email (SMTP) y QR (SmugMug u otro).
+5. ✅ **Cámara Canon**: selector de cámara en la fotocabina (Canon EDSDK si está
+   el SDK, webcams / EOS Webcam Utility, y la simulada). `canon.py` con
+   `CanonBackend` (EDSDK vía ctypes; **falta probar con hardware**). Setup en
+   `docs/canon-setup.md`.
+6. ✅ **Entrega**: Imprimir + Email (SMTP) + QR (SmugMug o servidor local).
 7. **Editor visual de plantillas**: arrastrar huecos/imágenes/textos, capas,
    guardar/cargar. (Lo más grande; va al final.)
 
