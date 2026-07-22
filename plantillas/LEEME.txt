@@ -1,0 +1,31 @@
+PLANTILLAS DE LA FOTO DE SALIDA (tira de fotocabina)
+====================================================
+
+Cada archivo .json de esta carpeta define una plantilla que aparece en el
+selector del modo "Fotocabina en vivo". La app ya trae algunas prearmadas
+("Clásico 1 foto", "Tira 3 fotos", "Tira 4 fotos"); acá podés agregar las tuyas.
+
+Campos:
+- name            : nombre que se muestra en el selector.
+- size_label      : tamaño de papel. Uno de los de config.py
+                    ("10x15 cm", "15x20 cm", "13x18 cm", "9x13 cm").
+- landscape       : true = lienzo apaisado, false = vertical.
+- background_color: color de fondo [R, G, B] (0-255).
+- frame_path      : ruta a un PNG que se pega ENCIMA de todo (marco/adornos),
+                    o null. Puede ser relativa al proyecto (ej "marcos/tira.png").
+- background_path : ruta a una imagen de fondo DEBAJO de todo, o null.
+- slots           : lista de huecos de foto. Uno por cada captura de la sesión.
+
+Cada hueco (slot):
+- x, y : esquina superior izquierda, en FRACCIONES 0..1 del lienzo.
+- w, h : ancho y alto, también en fracciones 0..1.
+- rotation : grados en sentido horario (0 = derecho).
+- fit  : cómo entra la foto en el hueco:
+         "cover"   -> llena y recorta (recomendado),
+         "contain" -> entra entera con borde,
+         "stretch" -> estira (deforma).
+
+Las coordenadas van en fracciones para que la plantilla sirva a cualquier DPI:
+x=0.06 significa "al 6% del ancho", w=0.88 significa "88% del ancho", etc.
+
+La cantidad de huecos = cantidad de fotos que pide la sesión.

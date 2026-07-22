@@ -43,22 +43,33 @@ def _canvas_size(frame: Image.Image, job: Job) -> tuple[int, int]:
     return job.size.pixels(job.dpi, landscape)
 
 
-def _fit_photo(photo: Image.Image, target: tuple[int, int], job: Job) -> Image.Image:
-    """Ajusta la foto al tamano objetivo segun el modo elegido. Devuelve RGB."""
+def fit_photo(photo: Image.Image, target: tuple[int, int],
+              fit: str = config.DEFAULT_FIT,
+              border_color: tuple[int, int, int] = (255, 255, 255)) -> Image.Image:
+    """Ajusta una foto al tamano objetivo segun el modo. Devuelve RGB.
+
+    Es la primitiva reutilizada tanto por la composicion de una foto suelta
+    como por la de plantillas con varios huecos.
+    """
     tw, th = target
     photo = photo.convert("RGB")
 
-    if job.fit == config.FIT_STRETCH:
+    if fit == config.FIT_STRETCH:
         return photo.resize((tw, th), Image.LANCZOS)
 
-    if job.fit == config.FIT_CONTAIN:
+    if fit == config.FIT_CONTAIN:
         fitted = ImageOps.contain(photo, (tw, th), Image.LANCZOS)
-        canvas = Image.new("RGB", (tw, th), job.border_color)
+        canvas = Image.new("RGB", (tw, th), border_color)
         canvas.paste(fitted, ((tw - fitted.width) // 2, (th - fitted.height) // 2))
         return canvas
 
     # FIT_COVER (predeterminado): llena y recorta el excedente, centrado.
     return ImageOps.fit(photo, (tw, th), Image.LANCZOS, centering=(0.5, 0.5))
+
+
+def _fit_photo(photo: Image.Image, target: tuple[int, int], job: Job) -> Image.Image:
+    """Compatibilidad: ajusta usando los parametros del Job."""
+    return fit_photo(photo, target, job.fit, job.border_color)
 
 
 def compose_image(photo: Image.Image, job: Job,
@@ -112,3 +123,63 @@ def process_one(photo_path: str, out_dir: str, job: Job,
     result = compose(photo_path, job, frame=frame)
     dest = output_path(photo_path, out_dir, job)
     return save_result(result, dest, job)
+
+
+def compose_template(photos: list[Image.Image | None], template,
+                     frame: Image.Image | None = None,
+                     background: Image.Image | None = None) -> Image.Image:
+    """Compone varias capturas dentro de una plantilla (tira de fotocabina).
+
+    `template` es un template.Template: define el lienzo, los huecos de foto
+    (posicion/tamano en fracciones 0..1), un marco PNG opcional encima y un
+    fondo opcional debajo.
+
+    `photos` se empareja con los huecos en orden. Se admiten None o una lista
+    mas corta que la cantidad de huecos: esos huecos quedan sin foto (util para
+    ir mostrando la tira mientras se llena durante la sesion).
+
+    Devuelve RGB.
+    """
+    canvas_w, canvas_h = template.canvas_size()
+
+    base = Image.new("RGBA", (canvas_w, canvas_h),
+                     tuple(template.background_color) + (255,))
+
+    # Fondo opcional debajo de todo.
+    if background is None and template.background_path:
+        background = Image.open(template.background_path)
+    if background is not None:
+        bg = fit_photo(background, (canvas_w, canvas_h), config.FIT_COVER)
+        base.alpha_composite(bg.convert("RGBA"))
+
+    # Cada captura en su hueco.
+    for slot, photo in zip(template.slots, photos):
+        if photo is None:
+            continue
+        sx = round(slot.x * canvas_w)
+        sy = round(slot.y * canvas_h)
+        sw = max(1, round(slot.w * canvas_w))
+        sh = max(1, round(slot.h * canvas_h))
+
+        photo = ImageOps.exif_transpose(photo)
+        fitted = fit_photo(photo, (sw, sh), slot.fit).convert("RGBA")
+
+        if slot.rotation:
+            # PIL rota en sentido antihorario; negamos para que sea horario.
+            fitted = fitted.rotate(-slot.rotation, expand=True,
+                                   resample=Image.BICUBIC)
+            px = sx + (sw - fitted.width) // 2
+            py = sy + (sh - fitted.height) // 2
+            base.alpha_composite(fitted, (px, py))
+        else:
+            base.alpha_composite(fitted, (sx, sy))
+
+    # Marco PNG encima (respeta su transparencia).
+    if frame is None and template.frame_path:
+        frame = _load_frame(template.frame_path)
+    if frame is not None:
+        if frame.size != (canvas_w, canvas_h):
+            frame = frame.resize((canvas_w, canvas_h), Image.LANCZOS)
+        base.alpha_composite(frame)
+
+    return base.convert("RGB")
