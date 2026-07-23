@@ -73,8 +73,20 @@ oficial de Canon (gratis, pero hay que registrarse).
    `EDSDK_DIR` con esa ruta.)
 3. Conectá la Canon por USB, encendida, en modo de disparo (P/Av/Tv/M), y **cerrá
    EOS Utility** u otros programas que la usen.
-4. Abrí la app → Fotocabina en vivo → en el selector elegí
-   **"Canon (EDSDK) — máxima calidad"**.
+4. Abrí la app → Fotocabina en vivo → en el selector de cámara vas a ver **dos**
+   opciones Canon:
+   - **"Canon (disparo directo) — instantáneo"** ⭐: la sesión queda abierta y la
+     foto llega **al instante** cuando disparás (obturador físico o botón
+     "Disparar (PC)"), pero la cámara **no transmite video** — no queda "abierta"
+     como webcam ni gasta batería de más. Es como trabaja dslrBooth. Ideal para
+     el flujo asistido con fotógrafo, y sin depender de EOS Utility.
+   - **"Canon (con Live View / preview)"**: además muestra la vista en vivo en
+     pantalla (para la fotocabina desatendida con cuenta regresiva). Mantiene el
+     Live View encendido mientras esté activa.
+
+> El Live View (video continuo) es lo que "abre" la cámara; el disparo directo
+> NO lo usa. Por eso podés tener transferencia instantánea sin tener la cámara
+> streameando todo el día.
 
 El EDSDK de Canon **no se puede redistribuir**, por eso `edsdk/` está en
 `.gitignore` y no se sube al repositorio: cada quien baja el SDK por su cuenta.

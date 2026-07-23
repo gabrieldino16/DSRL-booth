@@ -338,17 +338,26 @@ class BoothWindow(QMainWindow):
 
     def _apply_assisted_source(self) -> None:
         """Ajusta preview, etiqueta y botón según la fuente asistida activa."""
-        is_camera = self.assisted_source is self.camera
-        self.source_label.setText(
-            "Cámara (Live View)" if is_camera else f"Carpeta: {self.watch_folder}")
-        # La carpeta no tiene preview ni disparo desde la PC.
-        self.shutter_btn.setEnabled(is_camera)
+        src = self.assisted_source
+        is_camera = src is self.camera
+        has_preview = getattr(src, "has_preview", True)
+
         if is_camera:
+            self.source_label.setText(getattr(self.camera, "name", "Cámara"))
+        else:
+            self.source_label.setText(f"Carpeta: {self.watch_folder}")
+
+        # El disparo desde la PC solo aplica a una cámara (la carpeta es físico).
+        self.shutter_btn.setEnabled(is_camera)
+
+        if has_preview:
             self.preview_timer.start(self.PREVIEW_MS)
         else:
             self.preview_timer.stop()
             self.preview.setPixmap(QPixmap())
-            self.preview.setText("Esperando fotos de la cámara (EOS Utility)...")
+            self.preview.setText(
+                "Cámara lista — esperando el disparo…" if is_camera
+                else "Esperando fotos de la cámara (EOS Utility)…")
 
     def _arm_assisted(self) -> None:
         self._session_photos = []

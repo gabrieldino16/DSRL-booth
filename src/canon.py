@@ -114,7 +114,14 @@ class CanonBackend(CameraBackend):
     name = "Canon (EDSDK)"
     supports_physical_trigger = True  # el fotógrafo puede disparar en la cámara
 
-    def __init__(self) -> None:
+    def __init__(self, live_view: bool = True) -> None:
+        # live_view=False: "disparo directo". La sesión queda abierta y la foto
+        # llega INSTANTÁNEA al disparar, pero la cámara NO transmite video
+        # (no gasta batería/no calienta como una webcam). Es lo que hace dslrBooth.
+        self._want_live_view = live_view
+        self.has_preview = live_view
+        self.name = "Canon (Live View)" if live_view else "Canon (disparo directo)"
+
         self._dll: ctypes.WinDLL | None = None
         self._camera = ctypes.c_void_p()
         self._session = False
@@ -159,7 +166,9 @@ class CanonBackend(CameraBackend):
             self._camera, ctypes.c_uint(0x00000200), self._handler_ref, None),
             "SetObjectEventHandler")
 
-        self._start_live_view()
+        # Live View solo si se pidió (para "disparo directo" queda apagado).
+        if self._want_live_view:
+            self._start_live_view()
 
     def _start_live_view(self) -> None:
         mode = ctypes.c_uint(1)

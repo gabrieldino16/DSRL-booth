@@ -32,6 +32,9 @@ class CameraBackend(ABC):
     # (Canon EDSDK). En webcams el disparo siempre lo inicia la PC.
     supports_physical_trigger: bool = False
 
+    # Si la fuente tiene vista en vivo (preview). La Canon "disparo directo" no.
+    has_preview: bool = True
+
     # Callback opcional para el modo "foto asistida": se invoca con cada foto
     # entrante, sin importar si el disparo vino de la PC o del obturador fisico.
     on_photo = None
@@ -228,8 +231,14 @@ def available_cameras() -> list[CameraOption]:
     try:
         import canon
         if canon.edsdk_available():
-            options.append(CameraOption("Canon (EDSDK) — máxima calidad",
-                                        lambda: canon.CanonBackend()))
+            # Disparo directo (sin Live View): instantáneo, recomendado.
+            options.append(CameraOption(
+                "Canon (disparo directo) — instantáneo",
+                lambda: canon.CanonBackend(live_view=False)))
+            # Con Live View: para preview en pantalla (fotocabina desatendida).
+            options.append(CameraOption(
+                "Canon (con Live View / preview)",
+                lambda: canon.CanonBackend(live_view=True)))
     except Exception:  # noqa: BLE001
         pass
 
