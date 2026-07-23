@@ -112,6 +112,7 @@ class CanonBackend(CameraBackend):
     """Canon por USB usando EDSDK: live view + captura a máxima resolución."""
 
     name = "Canon (EDSDK)"
+    supports_physical_trigger = True  # el fotógrafo puede disparar en la cámara
 
     def __init__(self) -> None:
         self._dll: ctypes.WinDLL | None = None
@@ -120,7 +121,7 @@ class CanonBackend(CameraBackend):
         self._sdk_init = False
         self._evf_on = False
         self._handler_ref = None      # mantiene vivo el callback
-        self._captured: Image.Image | None = None
+        self._incoming: list[Image.Image] = []  # fotos descargadas por procesar
 
     # ---------- ciclo de vida ----------
     def start(self) -> None:
@@ -208,21 +209,42 @@ class CanonBackend(CameraBackend):
 
     # ---------- captura ----------
     def capture(self) -> Image.Image:
+        """Captura sincrónica (la usa el modo cuenta regresiva)."""
+        self.trigger()
+        deadline = time.time() + 15.0
+        while not self._incoming and time.time() < deadline:
+            self._pump()
+            time.sleep(0.02)
+        if not self._incoming:
+            raise CameraError("La Canon no devolvió la foto (timeout).")
+        return self._incoming.pop(0)
+
+    def trigger(self) -> None:
+        """Dispara desde la PC (no espera: la foto llega por poll())."""
         if not self._dll:
             raise CameraError("La Canon no está iniciada.")
-        self._captured = None
         _check(self._dll.EdsSendCommand(
             self._camera, kEdsCameraCommand_TakePicture, 0), "TakePicture")
 
-        # Esperar a que llegue la foto, bombeando los eventos del SDK.
-        deadline = time.time() + 15.0
-        while self._captured is None and time.time() < deadline:
-            self._dll.EdsGetEvent()
-            time.sleep(0.02)
+    def poll(self) -> None:
+        """Procesa eventos y entrega por on_photo las fotos que hayan llegado.
 
-        if self._captured is None:
-            raise CameraError("La Canon no devolvió la foto (timeout).")
-        return self._captured
+        Sirve tanto para el disparo desde la PC como para el obturador físico
+        del fotógrafo: ambos generan el mismo evento de transferencia.
+        """
+        if not self._dll:
+            return
+        self._pump()
+        while self._incoming:
+            img = self._incoming.pop(0)
+            if self.on_photo is not None:
+                self.on_photo(img)
+
+    def _pump(self) -> None:
+        try:
+            self._dll.EdsGetEvent()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_object_event(self, event, obj_ref, context):
         if event == kEdsObjectEvent_DirItemRequestTransfer:
@@ -245,7 +267,9 @@ class CanonBackend(CameraBackend):
                "CreateMemoryStream")
         _check(self._dll.EdsDownload(dir_item, info.size, stream), "Download")
         _check(self._dll.EdsDownloadComplete(dir_item), "DownloadComplete")
-        self._captured = self._stream_to_image(stream)
+        img = self._stream_to_image(stream)
+        if img is not None:
+            self._incoming.append(img)
         self._dll.EdsRelease(stream)
         self._dll.EdsRelease(dir_item)
 

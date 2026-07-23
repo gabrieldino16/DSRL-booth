@@ -28,6 +28,14 @@ class CameraBackend(ABC):
 
     name: str = "camara"
 
+    # Fotos que llegan solas (obturador fisico). True solo en camaras tethered
+    # (Canon EDSDK). En webcams el disparo siempre lo inicia la PC.
+    supports_physical_trigger: bool = False
+
+    # Callback opcional para el modo "foto asistida": se invoca con cada foto
+    # entrante, sin importar si el disparo vino de la PC o del obturador fisico.
+    on_photo = None
+
     @abstractmethod
     def start(self) -> None:
         """Abre la camara. Lanza CameraError si no se puede."""
@@ -39,6 +47,19 @@ class CameraBackend(ABC):
     @abstractmethod
     def capture(self) -> Image.Image:
         """Toma la foto de alta calidad y la devuelve como imagen PIL."""
+
+    def trigger(self) -> None:
+        """Pide una captura desde la PC. Entrega el resultado por on_photo.
+
+        Por defecto (webcam/simulada) captura al instante. La Canon manda el
+        comando a la camara y la foto llega despues via poll().
+        """
+        img = self.capture()
+        if self.on_photo is not None:
+            self.on_photo(img)
+
+    def poll(self) -> None:
+        """Procesa fotos entrantes (obturador fisico). Solo camaras tethered."""
 
     def stop(self) -> None:
         """Libera la camara."""

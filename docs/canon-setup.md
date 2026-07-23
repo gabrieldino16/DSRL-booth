@@ -3,8 +3,32 @@
 Hay dos formas de usar tu Canon en la fotocabina. Podés usar las dos: la primera
 para arrancar ya, la segunda para calidad de impresión.
 
-En el modo **Fotocabina en vivo** hay un **selector de cámara** arriba a la
-derecha. Las cámaras que detecte aparecen ahí; elegís la que quieras.
+En el modo **Fotocabina en vivo** hay un **selector de modo** y uno de **cámara**
+arriba. Elegí según cómo trabajes.
+
+---
+
+## ⭐ Opción recomendada para foto asistida — EOS Utility + carpeta observada
+
+Es el flujo del negocio con fotógrafo (foto con Papá Noel, fondo temático, etc.):
+el fotógrafo dispara, y en la PC la foto aparece sola para imprimir / email / QR.
+**No mantiene la cámara "abierta" como webcam todo el día** — la cámara solo
+trabaja cuando el fotógrafo aprieta el obturador. Funciona con **todas** tus
+Canon (T5, 80D, 6D Mark II).
+
+1. Instalá **EOS Utility** (viene con la cámara o se baja del sitio de Canon).
+2. Conectá la Canon por USB y abrí EOS Utility.
+3. En EOS Utility activá la **descarga automática** a una carpeta (en
+   "Preferencias → Carpeta de destino" / "Descargar imágenes automáticamente").
+4. En la app: Fotocabina en vivo → **Modo: "Foto asistida (fotógrafo)"** →
+   botón **"📁 Carpeta EOS Utility..."** y elegí **esa misma carpeta**.
+5. Listo: cada vez que el fotógrafo dispara, EOS Utility baja la foto a la
+   carpeta y la app la toma, la compone con la plantilla y la muestra para
+   Imprimir / Email / QR. Con "Nueva sesión" queda esperando la siguiente.
+
+> En modo asistido también podés disparar desde la PC (botón "Disparar (PC)") si
+> usás la cámara directa en vez de la carpeta. Y si la plantilla tiene varios
+> huecos, se van llenando con cada disparo.
 
 ---
 

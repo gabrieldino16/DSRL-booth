@@ -103,6 +103,20 @@ Los 7 pasos están implementados. Pendiente de validación/uso real:
 - **Cargar credenciales** en `secrets.json` (SmugMug + email) para la entrega en la nube.
 - Probar el flujo completo en la PC del evento (impresora K60, WiFi para QR).
 
+## 🧑‍📸 Modo "Foto asistida" (agregado)
+
+Además de la cuenta regresiva (fotocabina desatendida), la fotocabina tiene un
+modo **Foto asistida** para el negocio con fotógrafo:
+- La foto entra **venga de donde venga**: obturador físico del fotógrafo o botón
+  "Disparar (PC)".
+- Dos fuentes: **carpeta observada** (`ingest.WatchFolderSource` — EOS Utility
+  descarga a una carpeta y la app la vigila; **no** mantiene la cámara abierta) o
+  la **cámara directa** (Canon EDSDK con disparo físico/PC).
+- Cada foto se compone con la plantilla y aparece para Imprimir / Email / QR.
+- Si la plantilla tiene N huecos, se llenan con N disparos.
+
+Ver `docs/canon-setup.md` (opción recomendada: EOS Utility + carpeta observada).
+
 ## 💡 Ideas para más adelante
 - Editor: textos, QR y capas de imagen dentro del diseño (como dslrBooth).
 - Pantalla "kiosco" a pantalla completa para el evento (sin barras de ventana).
