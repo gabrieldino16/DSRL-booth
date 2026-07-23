@@ -17,7 +17,7 @@ from datetime import datetime
 
 from PIL import Image
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QMainWindow, QMessageBox, QPushButton, QStackedWidget, QVBoxLayout, QWidget,
@@ -27,6 +27,7 @@ import config
 import delivery
 import template as templates_mod
 from camera import available_cameras, DummyBackend
+from ingest import WatchFolderSource
 from imaging_qt import pil_to_qpixmap, print_image
 from processor import Job, compose_template, output_path, save_result, _load_frame
 
@@ -78,6 +79,12 @@ class BoothWindow(QMainWindow):
         self._countdown = 0
         self._in_session = False
 
+        # Modo de disparo: "countdown" (cuenta regresiva) o "assisted" (fotógrafo).
+        self.mode = "countdown"
+        self.watch_folder: str | None = None       # carpeta EOS Utility (asistido)
+        self.assisted_source = None                # fuente activa en modo asistido
+        self._assisted_busy = False                # mostrando resultado: ignora fotos
+
         # Cámaras disponibles (Canon si está el SDK, webcams, simulada).
         self.cam_options = available_cameras()
         self._cam_index, self.camera = self._open_default_camera()
@@ -92,6 +99,11 @@ class BoothWindow(QMainWindow):
         self.countdown_timer = QTimer(self)
         self.countdown_timer.setInterval(1000)
         self.countdown_timer.timeout.connect(self._tick_countdown)
+
+        # Vigila la cámara/carpeta en modo asistido (fotos entrantes).
+        self.poll_timer = QTimer(self)
+        self.poll_timer.setInterval(300)
+        self.poll_timer.timeout.connect(self._poll_assisted)
 
     # ---------- interfaz ----------
     def _build_ui(self) -> None:
@@ -121,6 +133,14 @@ class BoothWindow(QMainWindow):
         top.addWidget(self.info_label)
 
         top.addStretch(1)
+
+        top.addWidget(QLabel("<b>Modo:</b>"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Cuenta regresiva", "countdown")
+        self.mode_combo.addItem("Foto asistida (fotógrafo)", "assisted")
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        top.addWidget(self.mode_combo)
+
         top.addWidget(QLabel("📷"))
         self.camera_combo = QComboBox()
         for opt in self.cam_options:
@@ -129,6 +149,24 @@ class BoothWindow(QMainWindow):
         self.camera_combo.currentIndexChanged.connect(self._select_camera)
         top.addWidget(self.camera_combo)
         v.addLayout(top)
+
+        # Fila de fuente para el modo asistido (oculta en cuenta regresiva).
+        self.assisted_bar = QWidget()
+        ab = QHBoxLayout(self.assisted_bar)
+        ab.setContentsMargins(0, 0, 0, 0)
+        ab.addWidget(QLabel("<b>Fuente:</b>"))
+        self.source_label = QLabel("Cámara (Live View)")
+        self.source_label.setStyleSheet("color:#2d7d46; font-weight:bold;")
+        ab.addWidget(self.source_label)
+        folder_btn = QPushButton("📁 Carpeta EOS Utility...")
+        folder_btn.clicked.connect(self._pick_watch_folder)
+        ab.addWidget(folder_btn)
+        cam_src_btn = QPushButton("🎥 Usar cámara")
+        cam_src_btn.clicked.connect(self._use_camera_source)
+        ab.addWidget(cam_src_btn)
+        ab.addStretch(1)
+        self.assisted_bar.setVisible(False)
+        v.addWidget(self.assisted_bar)
 
         # Estado de la sesión (Toma X de N / mensajes).
         self.session_label = QLabel("")
@@ -147,9 +185,15 @@ class BoothWindow(QMainWindow):
         self.shutter_btn.setMinimumHeight(64)
         self.shutter_btn.setStyleSheet(
             "font-size:22px; font-weight:bold; background:#2d7d46; color:white;")
-        self.shutter_btn.clicked.connect(self._start_session)
+        self.shutter_btn.clicked.connect(self._on_shutter)
         v.addWidget(self.shutter_btn)
         return page
+
+    def _on_shutter(self) -> None:
+        if self.mode == "assisted":
+            self._pc_trigger()
+        else:
+            self._start_session()
 
     def _build_result_page(self) -> QWidget:
         page = QWidget()
@@ -199,6 +243,10 @@ class BoothWindow(QMainWindow):
         n = self.template.shots
         tomas = "1 foto" if n == 1 else f"{n} fotos"
         self.info_label.setText(f"{self.template.size_label} · {tomas}")
+        # En modo asistido, reflejar el nuevo número de tomas en la espera.
+        if getattr(self, "mode", "countdown") == "assisted" and not self._assisted_busy \
+                and not self._session_photos:
+            self._arm_assisted()
 
     # ---------- cámara ----------
     def _open_default_camera(self):
@@ -241,6 +289,120 @@ class BoothWindow(QMainWindow):
                 self.camera = DummyBackend()
                 self.camera.start()
         self.preview_timer.start(self.PREVIEW_MS)
+
+    # ---------- modo asistido (foto del fotógrafo) ----------
+    def _on_mode_changed(self, index: int) -> None:
+        self.mode = self.mode_combo.itemData(index)
+        if self.mode == "assisted":
+            self.assisted_bar.setVisible(True)
+            self.shutter_btn.setText("📸  Disparar (PC)")
+            self._enter_assisted()
+        else:
+            self.assisted_bar.setVisible(False)
+            self.shutter_btn.setText("📸  EMPEZAR")
+            self.shutter_btn.setEnabled(True)
+            self._exit_assisted()
+
+    def _enter_assisted(self) -> None:
+        # Elegir fuente: carpeta EOS Utility si se configuró, si no la cámara.
+        if self.watch_folder:
+            src = WatchFolderSource(self.watch_folder)
+            try:
+                src.start()
+            except Exception as exc:  # noqa: BLE001
+                QMessageBox.warning(self, "Carpeta no disponible", str(exc))
+                self.watch_folder = None
+                src = self.camera
+        else:
+            src = self.camera
+        self.assisted_source = src
+        src.on_photo = self._on_incoming_photo
+        self._apply_assisted_source()
+        self._arm_assisted()
+        self.poll_timer.start()
+
+    def _apply_assisted_source(self) -> None:
+        """Ajusta preview, etiqueta y botón según la fuente asistida activa."""
+        is_camera = self.assisted_source is self.camera
+        self.source_label.setText(
+            "Cámara (Live View)" if is_camera else f"Carpeta: {self.watch_folder}")
+        # La carpeta no tiene preview ni disparo desde la PC.
+        self.shutter_btn.setEnabled(is_camera)
+        if is_camera:
+            self.preview_timer.start(self.PREVIEW_MS)
+        else:
+            self.preview_timer.stop()
+            self.preview.setPixmap(QPixmap())
+            self.preview.setText("Esperando fotos de la cámara (EOS Utility)...")
+
+    def _arm_assisted(self) -> None:
+        self._session_photos = []
+        self._shot_index = 0
+        self._assisted_busy = False
+        n = self.template.shots
+        self.session_label.setText(f"Esperando disparo…  (Toma 1 de {n})")
+
+    def _exit_assisted(self) -> None:
+        self.poll_timer.stop()
+        if self.assisted_source is not None:
+            self.assisted_source.on_photo = None
+            if self.assisted_source is not self.camera:
+                try:
+                    self.assisted_source.stop()
+                except Exception:  # noqa: BLE001
+                    pass
+        self.assisted_source = None
+        self.session_label.setText("")
+        self.preview_timer.start(self.PREVIEW_MS)
+
+    def _pick_watch_folder(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        folder = QFileDialog.getExistingDirectory(
+            self, "Carpeta donde EOS Utility descarga las fotos",
+            self.watch_folder or os.getcwd())
+        if not folder:
+            return
+        self.watch_folder = folder
+        if self.mode == "assisted":
+            self._exit_assisted()
+            self._enter_assisted()
+
+    def _use_camera_source(self) -> None:
+        self.watch_folder = None
+        if self.mode == "assisted":
+            self._exit_assisted()
+            self._enter_assisted()
+
+    def _poll_assisted(self) -> None:
+        if self.assisted_source is not None:
+            try:
+                self.assisted_source.poll()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _pc_trigger(self) -> None:
+        if self.assisted_source is None or self._assisted_busy:
+            return
+        try:
+            self.assisted_source.trigger()
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.warning(self, "No se pudo disparar", str(exc))
+
+    def _on_incoming_photo(self, photo: Image.Image) -> None:
+        if self._assisted_busy:
+            return  # mostrando un resultado: se ignora hasta "Nueva sesión"
+        self._session_photos.append(photo)
+        self._shot_index = len(self._session_photos)
+        n = self.template.shots
+        if self._shot_index >= n:
+            self._assisted_busy = True
+            self.session_label.setText("¡Listo! Armando la foto…")
+            if not self._compose_and_show():
+                self._assisted_busy = False
+                self._arm_assisted()
+        else:
+            self.session_label.setText(
+                f"Foto {self._shot_index} de {n} recibida — esperando la próxima…")
 
     # ---------- preview en vivo ----------
     def _update_preview(self) -> None:
@@ -306,6 +468,14 @@ class BoothWindow(QMainWindow):
 
     def _finish_session(self) -> None:
         self.preview_timer.stop()
+        if not self._compose_and_show():
+            self._abort_session()
+            self.preview_timer.start(self.PREVIEW_MS)
+            return
+        self._end_session_state()
+
+    def _compose_and_show(self) -> bool:
+        """Compone las fotos de la sesión con la plantilla y muestra el resultado."""
         try:
             if self._frame_img is None and self.template.frame_path:
                 self._frame_img = _load_frame(self.template.frame_path)
@@ -314,13 +484,10 @@ class BoothWindow(QMainWindow):
             dest = self._save(result)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "Error al componer", str(exc))
-            self._abort_session()
-            self.preview_timer.start(self.PREVIEW_MS)
-            return
-
+            return False
         self._last_result = result
         self._show_result(result, dest)
-        self._end_session_state()
+        return True
 
     def _abort_session(self) -> None:
         self.countdown_timer.stop()
@@ -433,13 +600,21 @@ class BoothWindow(QMainWindow):
     def _new_photo(self) -> None:
         self.session_label.setText("")
         self.stack.setCurrentIndex(0)
-        self.preview_timer.start(self.PREVIEW_MS)
+        if self.mode == "assisted":
+            self._apply_assisted_source()  # restablece preview/placeholder
+            self._arm_assisted()
+        else:
+            self.preview_timer.start(self.PREVIEW_MS)
 
     # ---------- cierre ----------
     def closeEvent(self, event) -> None:  # noqa: N802
         self.preview_timer.stop()
         self.countdown_timer.stop()
-        for closer in (self.camera.stop, self.uploader.stop):
+        self.poll_timer.stop()
+        closers = [self.camera.stop, self.uploader.stop]
+        if self.assisted_source is not None and self.assisted_source is not self.camera:
+            closers.append(self.assisted_source.stop)
+        for closer in closers:
             try:
                 closer()
             except Exception:  # noqa: BLE001
