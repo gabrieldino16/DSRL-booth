@@ -24,8 +24,18 @@ from PIL import Image, ImageOps
 IMG_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
 
 
+def default_eos_folder() -> str:
+    """Carpeta donde EOS Utility descarga por defecto (Imágenes del usuario)."""
+    pics = os.path.join(os.path.expanduser("~"), "Pictures")
+    return pics if os.path.isdir(pics) else os.path.expanduser("~")
+
+
 class WatchFolderSource:
-    """Vigila una carpeta y entrega por on_photo cada imagen nueva y completa."""
+    """Vigila una carpeta (y sus subcarpetas) y entrega cada imagen nueva.
+
+    Entrega por `on_photo(img, ruta_original)`: la imagen ya cargada y la ruta del
+    archivo que dejó EOS Utility (para poder guardar la original tal cual).
+    """
 
     name = "Carpeta observada (EOS Utility)"
     supports_physical_trigger = True  # el disparo lo hace el fotógrafo
@@ -43,11 +53,17 @@ class WatchFolderSource:
         self._seen = set(self._list())
 
     def _list(self) -> list[str]:
+        """Imágenes en la carpeta y sus subcarpetas (EOS Utility crea subcarpetas
+        por fecha)."""
+        found: list[str] = []
         try:
-            return [os.path.join(self.folder, f) for f in os.listdir(self.folder)
-                    if os.path.splitext(f)[1].lower() in IMG_EXTS]
+            for root, _dirs, files in os.walk(self.folder):
+                for f in files:
+                    if os.path.splitext(f)[1].lower() in IMG_EXTS:
+                        found.append(os.path.join(root, f))
         except OSError:
-            return []
+            pass
+        return found
 
     def poll(self) -> None:
         for path in self._list():
@@ -67,7 +83,7 @@ class WatchFolderSource:
             self._seen.add(path)
             self._sizes.pop(path, None)
             if self.on_photo is not None:
-                self.on_photo(img)
+                self.on_photo(img, path)
 
     @staticmethod
     def _safe_open(path: str) -> Image.Image | None:

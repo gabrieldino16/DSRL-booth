@@ -56,7 +56,7 @@ class CameraBackend(ABC):
         """
         img = self.capture()
         if self.on_photo is not None:
-            self.on_photo(img)
+            self.on_photo(img, None)
 
     def poll(self) -> None:
         """Procesa fotos entrantes (obturador fisico). Solo camaras tethered."""

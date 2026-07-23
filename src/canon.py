@@ -238,7 +238,7 @@ class CanonBackend(CameraBackend):
         while self._incoming:
             img = self._incoming.pop(0)
             if self.on_photo is not None:
-                self.on_photo(img)
+                self.on_photo(img, None)
 
     def _pump(self) -> None:
         try:

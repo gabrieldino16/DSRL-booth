@@ -13,6 +13,8 @@ Reusa:
 from __future__ import annotations
 
 import os
+import re
+import shutil
 from datetime import datetime
 
 from PIL import Image
@@ -27,7 +29,7 @@ import config
 import delivery
 import template as templates_mod
 from camera import available_cameras, DummyBackend
-from ingest import WatchFolderSource
+from ingest import WatchFolderSource, default_eos_folder
 from imaging_qt import pil_to_qpixmap, print_image
 from processor import Job, compose_template, output_path, save_result, _load_frame
 
@@ -62,7 +64,8 @@ class BoothWindow(QMainWindow):
         self.setWindowTitle("DSRL Booth — Fotocabina en vivo")
         self.resize(1000, 760)
 
-        self.out_dir = os.path.join(os.getcwd(), "salida")
+        self.salida_base = os.path.join(os.getcwd(), "salida")
+        self.event_name = datetime.now().strftime("evento_%Y-%m-%d")
         self.templates = templates_mod.load_all()
         self.template = self.templates[0]
         self._frame_img: Image.Image | None = None
@@ -71,7 +74,7 @@ class BoothWindow(QMainWindow):
         self._last_url: str | None = None     # URL publicada (si se generó el QR)
         self._delivery_worker: _DeliveryWorker | None = None
 
-        self.uploader = delivery.load_uploader(self.out_dir)
+        self.uploader = delivery.load_uploader(self.salida_base)
 
         # Estado de la sesión de capturas.
         self._session_photos: list[Image.Image] = []
@@ -81,7 +84,8 @@ class BoothWindow(QMainWindow):
 
         # Modo de disparo: "countdown" (cuenta regresiva) o "assisted" (fotógrafo).
         self.mode = "countdown"
-        self.watch_folder: str | None = None       # carpeta EOS Utility (asistido)
+        self.watch_folder: str | None = default_eos_folder()  # carpeta EOS Utility
+        self._session_origins: list[str | None] = []  # rutas de originales por toma
         self.assisted_source = None                # fuente activa en modo asistido
         self._assisted_busy = False                # mostrando resultado: ignora fotos
 
@@ -120,6 +124,14 @@ class BoothWindow(QMainWindow):
         back_btn = QPushButton("← Inicio")
         back_btn.clicked.connect(self.close)
         top.addWidget(back_btn)
+
+        top.addWidget(QLabel("<b>Evento:</b>"))
+        self.event_edit = QLineEdit(self.event_name)
+        self.event_edit.setMaximumWidth(160)
+        self.event_edit.setToolTip("Las fotos se guardan en salida/<evento>/ "
+                                   "(originales y editadas).")
+        self.event_edit.textChanged.connect(self._on_event_changed)
+        top.addWidget(self.event_edit)
 
         top.addWidget(QLabel("<b>Plantilla:</b>"))
         self.template_combo = QComboBox()
@@ -235,6 +247,9 @@ class BoothWindow(QMainWindow):
         row2.addWidget(home_btn, stretch=1)
         v.addLayout(row2)
         return page
+
+    def _on_event_changed(self, text: str) -> None:
+        self.event_name = text
 
     # ---------- plantilla ----------
     def _on_template_changed(self, index: int) -> None:
@@ -388,10 +403,11 @@ class BoothWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.warning(self, "No se pudo disparar", str(exc))
 
-    def _on_incoming_photo(self, photo: Image.Image) -> None:
+    def _on_incoming_photo(self, photo: Image.Image, origin: str | None = None) -> None:
         if self._assisted_busy:
             return  # mostrando un resultado: se ignora hasta "Nueva sesión"
         self._session_photos.append(photo)
+        self._save_original(photo, origin)
         self._shot_index = len(self._session_photos)
         n = self.template.shots
         if self._shot_index >= n:
@@ -456,6 +472,7 @@ class BoothWindow(QMainWindow):
             return
 
         self._session_photos.append(photo)
+        self._save_original(photo, None)
         self._shot_index += 1
         n = self.template.shots
 
@@ -501,12 +518,33 @@ class BoothWindow(QMainWindow):
         self.template_combo.setEnabled(True)
         self.camera_combo.setEnabled(True)
 
+    def _event_dir(self, sub: str) -> str:
+        """Carpeta del evento actual (salida/<evento>/<sub>), creada si falta."""
+        safe = re.sub(r'[<>:"/\\|?*]', "_", self.event_name).strip() or "evento"
+        path = os.path.join(self.salida_base, safe, sub)
+        os.makedirs(path, exist_ok=True)
+        return path
+
     def _save(self, result: Image.Image) -> str:
-        os.makedirs(self.out_dir, exist_ok=True)
+        out_dir = self._event_dir("editadas")
         job = Job(frame_path="", size=self.template.size, dpi=self.template.dpi)
         stem = datetime.now().strftime("foto_%Y%m%d_%H%M%S")
-        dest = output_path(os.path.join(self.out_dir, stem), self.out_dir, job)
+        dest = output_path(os.path.join(out_dir, stem), out_dir, job)
         return save_result(result, dest, job)
+
+    def _save_original(self, photo: Image.Image, origin: str | None) -> None:
+        """Guarda la foto original (sin marco) en la carpeta del evento."""
+        try:
+            out_dir = self._event_dir("originales")
+            if origin and os.path.isfile(origin):
+                dest = os.path.join(out_dir, os.path.basename(origin))
+                if not os.path.exists(dest):
+                    shutil.copy2(origin, dest)  # copia el archivo tal cual (EXIF intacto)
+            else:
+                stem = datetime.now().strftime("orig_%Y%m%d_%H%M%S_%f")
+                photo.save(os.path.join(out_dir, stem + ".jpg"), "JPEG", quality=95)
+        except Exception:  # noqa: BLE001
+            pass  # que un fallo guardando el original no corte la sesión
 
     # ---------- resultado ----------
     def _show_result(self, result: Image.Image, dest: str) -> None:

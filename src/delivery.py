@@ -104,8 +104,10 @@ class LocalUploader(Uploader):
 
     def upload(self, path: str) -> str:
         self._ensure_server()
+        from urllib.parse import quote
+
         rel = os.path.relpath(os.path.abspath(path), self.serve_dir)
-        rel = rel.replace(os.sep, "/")
+        rel = quote(rel.replace(os.sep, "/"))
         return f"http://{_lan_ip()}:{self.port}/{rel}"
 
     def stop(self) -> None:
