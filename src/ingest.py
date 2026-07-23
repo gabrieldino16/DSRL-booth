@@ -39,6 +39,7 @@ class WatchFolderSource:
 
     name = "Carpeta observada (EOS Utility)"
     supports_physical_trigger = True  # el disparo lo hace el fotógrafo
+    has_preview = False               # no hay vista en vivo desde una carpeta
     on_photo = None
 
     def __init__(self, folder: str) -> None:
