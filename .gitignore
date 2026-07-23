@@ -5,3 +5,5 @@ salida/
 build/
 dist/
 *.spec
+secrets.json
+edsdk/

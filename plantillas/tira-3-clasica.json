@@ -1,0 +1,13 @@
+{
+  "name": "Tira 3 clásica (ejemplo)",
+  "size_label": "10x15 cm",
+  "landscape": false,
+  "background_color": [255, 255, 255],
+  "frame_path": null,
+  "background_path": null,
+  "slots": [
+    { "x": 0.06, "y": 0.04, "w": 0.88, "h": 0.27, "rotation": 0.0, "fit": "cover" },
+    { "x": 0.06, "y": 0.335, "w": 0.88, "h": 0.27, "rotation": 0.0, "fit": "cover" },
+    { "x": 0.06, "y": 0.63, "w": 0.88, "h": 0.27, "rotation": 0.0, "fit": "cover" }
+  ]
+}
