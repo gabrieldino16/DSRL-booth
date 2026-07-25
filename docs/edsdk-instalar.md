@@ -26,9 +26,15 @@ Tiene que decir **64**. (Si dijera 32, avisame.) Esto define qué DLL usar.
 
 El EDSDK se descarga desde el portal de desarrolladores de Canon. Según tu región:
 
-- **Canon Europa:** https://developers.canon-europe.com/
-- **Canon USA:** https://developer.usa.canon.com/
+- **Canon Europa:** https://developers.canon-europe.com/ ← **usá esta desde Argentina**
+- **Canon USA:** https://developer.usa.canon.com/ (alternativa si la de arriba falla)
 - Si esos links cambian, buscá en Google: **"Canon EDSDK developer program"**.
+
+> **Desde Argentina:** andá por **Canon Europa**. No exige ser empresa ni
+> residente de la UE, y es la vía habitual para conseguir el EDSDK fuera de
+> EE.UU. y Japón. El portal de Canon USA a veces limita el acceso a
+> desarrolladores estadounidenses. No existe un portal de desarrolladores propio
+> de Canon Latinoamérica. Si por Europa te rechazan, probá el de USA.
 
 Pasos:
 1. Creá una cuenta (gratis) y confirmá el email.
